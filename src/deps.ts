@@ -1,5 +1,6 @@
 // Everything handlers need besides the Discord objects they're given.
 // Built once in src/index.ts; tests construct it with fakes.
+import type { SharedLogin } from './config/shared-logins.ts'
 import type { IgloohomeClient } from './lib/igloohome.ts'
 import type { AccessGuild } from './lib/member-access.ts'
 import type { SalesforceClient } from './lib/salesforce.ts'
@@ -11,6 +12,7 @@ export type BotConfig = {
   welcomeChannelId: string
   storageCampaignId: string
   storageAdditionalInstructions: string
+  sharedLogins: readonly SharedLogin[]
 }
 
 export type Deps = {

@@ -5,6 +5,7 @@ import { MessageFlags, type Interaction, type RepliableInteraction } from 'disco
 import { commandsByName } from '../commands/index.ts'
 import type { Deps } from '../deps.ts'
 import { handleLinkMembershipModal } from '../interactions/link-membership-modal.ts'
+import { handlePasswordRefresh } from '../interactions/password-refresh.ts'
 import { CUSTOM_IDS, GENERIC_ERROR, linkMembershipModal } from '../lib/messages.ts'
 
 export async function handleInteraction(interaction: Interaction, deps: Deps): Promise<void> {
@@ -16,9 +17,18 @@ export async function handleInteraction(interaction: Interaction, deps: Deps): P
         return
       }
       await command.execute(interaction, deps)
+    } else if (interaction.isAutocomplete()) {
+      const command = commandsByName.get(interaction.commandName)
+      if (!command?.autocomplete) {
+        console.warn(`[interaction] no autocomplete for /${interaction.commandName}`)
+        return
+      }
+      await command.autocomplete(interaction, deps)
     } else if (interaction.isButton()) {
       if (interaction.customId === CUSTOM_IDS.showLinkForm) {
         await interaction.showModal(linkMembershipModal())
+      } else if (interaction.customId.startsWith(CUSTOM_IDS.passwordRefreshPrefix)) {
+        await handlePasswordRefresh(interaction, deps)
       } else {
         // e.g. the retired storage_request_access button on old messages
         console.warn(`[interaction] unknown button ${interaction.customId}`)
@@ -38,6 +48,7 @@ export async function handleInteraction(interaction: Interaction, deps: Deps): P
 
 function describe(interaction: Interaction): string {
   if (interaction.isChatInputCommand()) return `/${interaction.commandName}`
+  if (interaction.isAutocomplete()) return `/${interaction.commandName} autocomplete`
   if (interaction.isButton() || interaction.isModalSubmit()) return interaction.customId
   return `interaction ${interaction.type}`
 }

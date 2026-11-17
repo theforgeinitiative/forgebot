@@ -10,6 +10,8 @@ import {
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js'
+import type { SharedLogin } from '../config/shared-logins.ts'
+import { totp } from './totp.ts'
 
 export const MEMBER_APP_URL = 'https://app.theforgeinitiative.org'
 export const ID_RECOVERY_URL = 'https://www.tfaforms.com/4764292'
@@ -19,6 +21,8 @@ export const CUSTOM_IDS = {
   linkMembershipForm: 'link_membership_form',
   hid: 'hid',
   pid: 'pid',
+  // New: followed by the site id, e.g. password_refresh:bambu
+  passwordRefreshPrefix: 'password_refresh:',
 } as const
 
 const WELCOME_HELP = `**:link: Link your membership:**
@@ -62,6 +66,60 @@ export const STORAGE = {
     ":woozy_face: Oof! I couldn't send you a DM with the code. Make sure your privacy settings allow DMs from server members, then try again.",
   done: ":unlock: You're in!",
 } as const
+
+// New: /password
+export const PASSWORD = {
+  notMember:
+    ':customs: Shared logins are only available to current members. If you are one, run `/link-membership` to link your membership, then try again.',
+  failed:
+    ":woozy_face: Oof! We encountered a problem checking your membership. Please try again and ask for help if you're stuck.",
+  unknownSite: ":thinking: I don't have a login for that site. Pick one from the list.",
+  noneConfigured: ':thinking: No shared logins are set up yet.',
+} as const
+
+// Inline code that survives values containing a backtick
+function code(value: string): string {
+  return value.includes('`') ? `\`\` ${value} \`\`` : `\`${value}\``
+}
+
+export function passwordReply(login: SharedLogin, now: number = Date.now()) {
+  // Each value sits alone on its line so a triple-click selects just it
+  const lines = [
+    `:closed_lock_with_key: Login Credentials for **${login.name}**`,
+    ``,
+    `**Username**`,
+    code(login.username),
+    `**Password**`,
+    code(login.password),
+  ]
+  if (login.totpSecret) {
+    const { code: otp, expiresAt } = totp(login.totpSecret, now)
+    // Slack only stretches the countdown; the code is always the current one
+    const expires = Math.floor(expiresAt.getTime() / 1000) + login.totpSlackSeconds
+    lines.push(
+      ``,
+      `**2FA code** (expires <t:${expires}:R>)`,
+      code(otp),
+    )
+  }
+  const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setLabel(`Open ${login.name}`.slice(0, 80))
+      .setEmoji('🔗')
+      .setStyle(ButtonStyle.Link)
+      .setURL(login.url),
+  )
+  if (login.totpSecret) {
+    row.addComponents(
+      new ButtonBuilder()
+        .setCustomId(`${CUSTOM_IDS.passwordRefreshPrefix}${login.id}`)
+        .setLabel('New 2FA code')
+        .setEmoji('🔄')
+        .setStyle(ButtonStyle.Secondary),
+    )
+  }
+  return { content: lines.join('\n'), components: [row] }
+}
 
 export const GENERIC_ERROR =
   ":woozy_face: Oof! Something went wrong. Please try again and ask for help if you're stuck."
