@@ -5,6 +5,7 @@
 process.env.TZ ??= 'America/New_York'
 
 import { Client, Events, GatewayIntentBits, PermissionFlagsBits } from 'discord.js'
+import { parseSharedLogins } from './config/shared-logins.ts'
 import type { Deps } from './deps.ts'
 import { envSchema, parseEnv } from './env.ts'
 import { handleGuildMemberAdd } from './events/guild-member-add.ts'
@@ -16,6 +17,7 @@ import { setupProblems } from './lib/setup-check.ts'
 import { createSheetLog } from './lib/sheet-log.ts'
 
 const env = parseEnv(envSchema)
+const sharedLogins = parseSharedLogins()
 
 const client = new Client({
   // GuildMembers is privileged; it must be enabled for the application in the
@@ -30,6 +32,7 @@ const deps: Deps = {
     welcomeChannelId: env.DISCORD_WELCOME_CHANNEL_ID,
     storageCampaignId: env.SF_STORAGE_CAMPAIGN_ID,
     storageAdditionalInstructions: env.STORAGE_ADDITIONAL_INSTRUCTIONS,
+    sharedLogins,
   },
   salesforce: createSalesforceClient(
     connectionFactory({
@@ -52,6 +55,9 @@ const deps: Deps = {
 
 client.once(Events.ClientReady, (c) => {
   console.log(`[bot] ready as ${c.user.tag} (TZ=${process.env.TZ})`)
+  console.log(
+    `[bot] ${sharedLogins.length} shared logins: ${sharedLogins.map((l) => l.id).join(', ') || '(none)'}`,
+  )
   const guild = c.guilds.cache.get(env.DISCORD_GUILD_ID)
   const me = guild?.members.me
   if (!guild || !me) {

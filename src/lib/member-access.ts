@@ -10,7 +10,10 @@ const MAX_NICKNAME = 32
 // Minimal shapes so tests can pass fakes instead of discord.js objects
 export type AccessMember = {
   id: string
-  roles: { add(roleId: string, reason?: string): Promise<unknown> }
+  roles: {
+    add(roleId: string, reason?: string): Promise<unknown>
+    cache: { has(roleId: string): boolean }
+  }
   setNickname(nick: string, reason?: string): Promise<unknown>
 }
 

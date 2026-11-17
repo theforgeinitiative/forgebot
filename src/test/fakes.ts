@@ -1,6 +1,7 @@
 // Test doubles for handler tests. Discord interactions are faked with just
 // the members the handlers touch, then cast to the discord.js types.
 import { vi } from 'vitest'
+import type { SharedLogin } from '../config/shared-logins.ts'
 import type { Deps } from '../deps.ts'
 import type { AccessMember } from '../lib/member-access.ts'
 import type { Contact } from '../lib/salesforce.ts'
@@ -18,13 +19,39 @@ export function contact(overrides: Partial<Contact> = {}): Contact {
   }
 }
 
+// RFC 6238's SHA-1 test secret ("12345678901234567890")
+export const TEST_TOTP_SECRET = Buffer.from('12345678901234567890')
+
+export const SHARED_LOGINS: readonly SharedLogin[] = [
+  {
+    id: 'bambu',
+    name: 'Bambu Lab',
+    url: 'https://bambulab.com',
+    username: 'shop@example.org',
+    password: 'hunter2',
+    totpSecret: TEST_TOTP_SECRET,
+    totpSlackSeconds: 0,
+  },
+  {
+    id: 'glowforge',
+    name: 'Glowforge',
+    url: 'https://app.glowforge.com',
+    username: 'laser@example.org',
+    password: 'p`ss',
+    totpSlackSeconds: 0,
+  },
+]
+
 export function fakeMember(id = 'user-1'): AccessMember & {
-  roles: { add: ReturnType<typeof vi.fn> }
+  roles: { add: ReturnType<typeof vi.fn>; cache: { has: ReturnType<typeof vi.fn> } }
   setNickname: ReturnType<typeof vi.fn>
 } {
   return {
     id,
-    roles: { add: vi.fn(async () => undefined) },
+    roles: {
+      add: vi.fn(async () => undefined),
+      cache: { has: vi.fn((_roleId: string) => false) },
+    },
     setNickname: vi.fn(async () => undefined),
   }
 }
@@ -38,6 +65,7 @@ export function fakeDeps(overrides: Partial<Deps> = {}) {
       welcomeChannelId: 'chan-welcome',
       storageCampaignId: '701STORAGE',
       storageAdditionalInstructions: 'Gate code is on the sign.',
+      sharedLogins: SHARED_LOGINS,
     },
     salesforce: {
       getContactByDiscordId: vi.fn(async () => contact() as Contact | null),
