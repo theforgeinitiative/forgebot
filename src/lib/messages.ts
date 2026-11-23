@@ -5,12 +5,14 @@ import {
   ActionRowBuilder,
   ButtonBuilder,
   ButtonStyle,
+  escapeMarkdown,
   LabelBuilder,
   ModalBuilder,
   TextInputBuilder,
   TextInputStyle,
 } from 'discord.js'
 import type { SharedLogin } from '../config/shared-logins.ts'
+import { ageFromBirthdate, type ContactSummary, type EmergencyInfo, type HouseholdAdult } from './salesforce.ts'
 import { totp } from './totp.ts'
 
 export const MEMBER_APP_URL = 'https://app.theforgeinitiative.org'
@@ -119,6 +121,132 @@ export function passwordReply(login: SharedLogin, now: number = Date.now()) {
     )
   }
   return { content: lines.join('\n'), components: [row] }
+}
+
+// New: /emergency-info
+export const EMERGENCY = {
+  notConfigured: ":thinking: Emergency info isn't set up yet.",
+  notKeyholder: ':customs: Emergency info is only available to keyholders.',
+  roleCheckFailed:
+    ":woozy_face: Oof! I couldn't check your roles. Please try again, and call 911 directly if it's urgent.",
+  lookupFailed:
+    ":woozy_face: Oof! Salesforce didn't answer. Please try again, and call 911 directly if it's urgent.",
+  notFound: ":thinking: I couldn't find anyone by that name. Try again and pick someone from the list.",
+  ambiguous: (names: readonly string[]) =>
+    `:thinking: More than one person matches. Run the command again and pick one from the list:\n${names.map((n) => `- ${escapeMarkdown(n)}`).join('\n')}`,
+  sent: ':ambulance: I sent the emergency info to your DMs.',
+  dmFailed: ":warning: I couldn't DM you, so here it is. Only you can see this.",
+} as const
+
+// Discord's per-message limit
+const MAX_MESSAGE = 2000
+
+type PersonName = { firstName: string | null; lastName: string | null; displayName: string | null }
+
+// The full name, falling back to the display name
+export function fullNameLabel(p: PersonName): string {
+  return [p.firstName, p.lastName].filter(Boolean).join(' ') || p.displayName?.trim() || 'Unnamed contact'
+}
+
+// For picking someone: "Display Name (First Last)", or whichever one exists.
+// The display name is what tells apart people with the same name.
+export function personLabel(p: PersonName): string {
+  const full = [p.firstName, p.lastName].filter(Boolean).join(' ')
+  const display = p.displayName?.trim()
+  if (display && full && display !== full) return `${display} (${full})`
+  return display || full || 'Unnamed contact'
+}
+
+// Long free-text values are quoted so their line breaks stay with them
+function field(label: string, value: string | null): string {
+  const text = value?.trim()
+  if (!text) return `**${label}:** _none on file_`
+  if (!text.includes('\n')) return `**${label}:** ${escapeMarkdown(text)}`
+  return `**${label}:**\n${text.split('\n').map((l) => `> ${escapeMarkdown(l)}`).join('\n')}`
+}
+
+// Multi-select picklists are stored semicolon-separated
+const picklist = (value: string | null) => value?.split(';').map((v) => v.trim()).filter(Boolean).join(', ') ?? null
+
+function phones(adult: HouseholdAdult): string {
+  // HomePhone is labeled "Other Phone" in the member portal
+  const entries = [
+    { label: 'Mobile', number: adult.mobilePhone?.trim(), preferred: adult.preferredPhone === 'Mobile' },
+    { label: 'Other', number: adult.homePhone?.trim(), preferred: ['Home', 'Other'].includes(adult.preferredPhone ?? '') },
+  ].filter((e) => e.number)
+  if (entries.length === 0) return '_no phone on file_'
+  const markPreferred = entries.length > 1
+  return entries
+    .map((e) => `${e.label} ${escapeMarkdown(e.number!)}${markPreferred && e.preferred ? ' (preferred)' : ''}`)
+    .join(' · ')
+}
+
+const ageText = (birthdate: string | null, now: Date) => {
+  const age = ageFromBirthdate(birthdate, now)
+  return age === null ? 'age unknown' : `age ${age}`
+}
+
+// The DM. Split into as many messages as it takes, at line breaks.
+export function emergencyInfoMessages(info: EmergencyInfo, now: Date = new Date()): string[] {
+  const { person, emergencyContact: ec } = info
+  const ecParts = [ec.name?.trim(), ec.relationship?.trim() && `(${ec.relationship.trim()})`, ec.phone?.trim()]
+  const ecLine = ec.name?.trim() || ec.phone?.trim() ? escapeMarkdown(ecParts.filter(Boolean).join(' ')) : '_none on file_'
+
+  const adults = info.householdAdults.length
+    ? info.householdAdults.map((a) => `- **${escapeMarkdown(fullNameLabel(a))}**: ${phones(a)}`)
+    : ['_No other adults in the household._']
+
+  const lines = [
+    `:rotating_light: **Emergency info for ${escapeMarkdown(fullNameLabel(person))}**`,
+    `Born ${person.birthdate ?? 'unknown'} (${ageText(person.birthdate, now)})`,
+    ``,
+    `**Emergency contact:** ${ecLine}`,
+    ``,
+    field('Allergies', info.allergies),
+    field('Medication', info.medication),
+    field('Other health info', info.healthIssues),
+    field('Dietary restrictions', picklist(info.dietaryRestrictions)),
+    field('Other food-related info', info.otherFoodInfo),
+    ``,
+    `**Adults in the household**`,
+    ...adults,
+    ``,
+    `-# In an emergency, call 911 first. This lookup was logged.`,
+  ]
+  return splitMessage(lines, MAX_MESSAGE)
+}
+
+// Packs lines into messages under the limit; hard-splits any single line
+// that is longer than the limit on its own.
+export function splitMessage(lines: readonly string[], limit: number): string[] {
+  const messages: string[] = []
+  let current = ''
+  for (const line of lines.flatMap((l) => (l.length <= limit ? [l] : (l.match(new RegExp(`[^]{1,${limit}}`, 'g')) ?? [])))) {
+    const next = current ? `${current}\n${line}` : line
+    if (next.length > limit) {
+      messages.push(current)
+      current = line
+    } else {
+      current = next
+    }
+  }
+  if (current) messages.push(current)
+  return messages
+}
+
+// Posted in the log channel. Names who looked and whom, never the details.
+export function emergencyAuditLog(opts: {
+  userId: string
+  person: ContactSummary & { pid: string | null }
+}) {
+  // Falls back to the Contact Id so the record is still identifiable
+  const id = opts.person.pid ? `PID \`${opts.person.pid}\`` : `Salesforce \`${opts.person.id}\``
+  return {
+    content:
+      `:rotating_light: <@${opts.userId}> viewed emergency info for **${escapeMarkdown(fullNameLabel(opts.person))}** ` +
+      `(${id}).`,
+    allowedMentions: { parse: [] },
+  }
 }
 
 export const GENERIC_ERROR =

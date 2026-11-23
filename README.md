@@ -12,6 +12,7 @@ The Forge Initiative's Discord bot, written in TypeScript with discord.js. It re
 | `/welcome` | Posts the public welcome message, which includes the Link Membership button. |
 | `/unlock-storage unit:` | Gives a linked, current member a 1–2 hour igloohome PIN for a storage unit, sent by DM. The member must be **Approved** on the storage campaign in Salesforce. Every PIN issued is recorded in the unlock log sheet. |
 | `/password site:` | Shows anyone with the member role the login for a shared account (URL, username, password and, if set up, the current 2FA code with a **New 2FA code** button). The reply is visible only to them. Sites are configured in environment variables (see below). |
+| `/emergency-info person:` | Lets anyone with the Keyholder role look up a member's or guest's emergency contact, allergies, medication, health and dietary info, and the names and phone numbers of the other adults in their household. The `person` option autocompletes names from Salesforce. Each lookup is posted to the emergency log channel first, then the details are sent to the keyholder by DM. See [Emergency info](#emergency-info-emergency-info). |
 
 ### Events
 
@@ -27,6 +28,7 @@ The bot needs these permissions on the server:
 - **Manage Roles.** The bot's own role must sit above the member role in the role list.
 - **Manage Nicknames.**
 - **View Channel** and **Send Messages** in the welcome channel.
+- **View Channel** and **Send Messages** in the emergency log channel, if `/emergency-info` is set up.
 
 Invite the bot with the `bot` and `applications.commands` scopes.
 
@@ -56,6 +58,18 @@ SHARED_LOGIN_BAMBU_NAME=Bambu Lab                # optional: defaults to "Bambu"
 - **Adding or changing a site.** Set the variables and redeploy. The site list uses autocomplete, so you don't need to run `deploy-commands` again.
 - **Who can see them.** Anyone with the member role (`DISCORD_MEMBER_ROLE_ID`). Each view is logged with the user and site, never the credentials.
 - The bot won't start if a site is missing a required variable or has an invalid URL or 2FA secret.
+#### Emergency info (`/emergency-info`)
+
+- **Turning it on.** Set `DISCORD_KEYHOLDER_ROLE_ID` (the Keyholder role) and `EMERGENCY_LOG_CHANNEL_ID` (a private channel for admins), then run `npm run deploy-commands`. Leave both blank to turn the command off. Setting only one fails at startup, so the command can't run without its log.
+- **Who can use it.** Only members with the Keyholder role. The bot checks the role every time someone runs the command and on every keystroke of the name search. Anyone else gets no name suggestions and a refusal. Refusals are written to the console log, not the log channel. Discord still shows the command to everyone. To hide it, go to Server Settings → Integrations → the bot → `/emergency-info` and allow only the Keyholder role. This is optional: the bot's own check is what controls access.
+- **What it shows.** Data comes from the person's Salesforce Contact, using the same fields as the member portal's profile form:
+  - emergency contact name, relationship and phone
+  - allergies, medication and other health info
+  - dietary restrictions and other food-related info
+  - every other Contact on the same household Account who is 18 or older, with their mobile and other phone. As in the portal, a Contact with no birthdate counts as an adult.
+- **Who you can look up.** Any Salesforce Contact whose display name or full name matches the search, whether or not their membership is current. If someone types a name and runs the command without picking from the list, the bot uses that name only if it matches exactly one person. Otherwise it lists the matches.
+- **Logging.** Before revealing anything, the bot posts to the log channel: who looked, whose record they opened (name and PID, or the Salesforce Contact Id for someone without a PID). The post never includes the medical details. If that post fails, the bot still shows the info, since it's an emergency, and writes the lookup to the console log. The startup check warns if the bot can't post in the log channel.
+- **Delivery.** The details go to the keyholder by DM, which stays in their DMs until they delete it. If the bot can't DM them, it shows the details in a reply only they can see instead.
 
 The storage lock list is defined in [src/config/storage-locks.ts](src/config/storage-locks.ts), not in an environment variable. After editing it, redeploy and then run `npm run deploy-commands`.
 

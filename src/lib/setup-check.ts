@@ -6,6 +6,9 @@ export type SetupFacts = {
   canManageNicknames: boolean
   memberRole: { name: string; managed: boolean; belowBotTopRole: boolean } | null
   welcomeChannelSendable: boolean
+  // both null when /emergency-info isn't configured
+  keyholderRoleExists: boolean | null
+  emergencyLogChannelSendable: boolean | null
 }
 
 export function setupProblems(f: SetupFacts): string[] {
@@ -26,6 +29,12 @@ export function setupProblems(f: SetupFacts): string[] {
   }
   if (!f.welcomeChannelSendable) {
     problems.push('bot cannot send messages in DISCORD_WELCOME_CHANNEL_ID')
+  }
+  if (f.keyholderRoleExists === false) {
+    problems.push('DISCORD_KEYHOLDER_ROLE_ID is not a role in this guild (/emergency-info will refuse everyone)')
+  }
+  if (f.emergencyLogChannelSendable === false) {
+    problems.push('bot cannot send messages in EMERGENCY_LOG_CHANNEL_ID (/emergency-info lookups will only be logged to the console)')
   }
   return problems
 }

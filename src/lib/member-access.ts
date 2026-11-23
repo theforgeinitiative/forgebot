@@ -43,6 +43,24 @@ export async function fetchGuildMember(
   }
 }
 
+export type MemberRoleCheck = 'member' | 'not-member' | 'lookup-failed'
+
+// Whether the user holds a role (the member role, or e.g. Keyholder) in the
+// guild. Used to gate commands; looks at the role, not Salesforce.
+export async function checkMemberRole(
+  getGuild: () => Promise<AccessGuild>,
+  userId: string,
+  roleId: string,
+): Promise<MemberRoleCheck> {
+  try {
+    const member = await fetchGuildMember(await getGuild(), userId)
+    return member?.roles.cache.has(roleId) ? 'member' : 'not-member'
+  } catch (err) {
+    console.error(`[member-access] member lookup for ${userId} failed:`, err)
+    return 'lookup-failed'
+  }
+}
+
 // Adds the member role (throws on failure) and sets the nickname (best
 // effort: Discord refuses for the server owner or members ranked above the
 // bot, which shouldn't block access).

@@ -33,10 +33,30 @@ export const envSchema = discordEnvSchema.extend({
   STORAGE_LOG_SHEET_NAME: z.string().trim().min(1).default('Log'),
   GOOGLE_SERVICE_ACCOUNT_JSON: optional,
 
+  // /emergency-info. Optional as a pair: see emergencySettings below.
+  DISCORD_KEYHOLDER_ROLE_ID: optional,
+  EMERGENCY_LOG_CHANNEL_ID: optional,
+
   PORT: z.coerce.number().int().positive().default(3000),
 })
 
 export type Env = z.infer<typeof envSchema>
+
+export type EmergencySettings = { keyholderRoleId: string; logChannelId: string }
+
+// null when neither variable is set (the command is off); throws when only
+// one is, so the command can never run without its audit log channel.
+export function emergencySettings(env: Env): EmergencySettings | null {
+  const { DISCORD_KEYHOLDER_ROLE_ID: keyholderRoleId, EMERGENCY_LOG_CHANNEL_ID: logChannelId } = env
+  if (!keyholderRoleId && !logChannelId) return null
+  if (!keyholderRoleId || !logChannelId) {
+    const missing = keyholderRoleId ? 'EMERGENCY_LOG_CHANNEL_ID' : 'DISCORD_KEYHOLDER_ROLE_ID'
+    throw new Error(
+      `[env] invalid environment:\n  ${missing}: required when the other /emergency-info variable is set`,
+    )
+  }
+  return { keyholderRoleId, logChannelId }
+}
 
 export function parseEnv<S extends z.ZodType>(
   schema: S,
