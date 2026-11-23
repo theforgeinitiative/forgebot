@@ -6,6 +6,8 @@ const ok: SetupFacts = {
   canManageNicknames: true,
   memberRole: { name: 'Current Member', managed: false, belowBotTopRole: true },
   welcomeChannelSendable: true,
+  keyholderRoleExists: true,
+  emergencyLogChannelSendable: true,
 }
 
 describe('setupProblems', () => {
@@ -29,7 +31,13 @@ describe('setupProblems', () => {
         canManageNicknames: false,
         memberRole: null,
         welcomeChannelSendable: false,
+        keyholderRoleExists: false,
+        emergencyLogChannelSendable: false,
       }),
-    ).toHaveLength(4)
+    ).toHaveLength(6)
+  })
+
+  it('skips the keyholder role and log channel when /emergency-info is off', () => {
+    expect(setupProblems({ ...ok, keyholderRoleExists: null, emergencyLogChannelSendable: null })).toEqual([])
   })
 })

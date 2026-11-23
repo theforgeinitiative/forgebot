@@ -4,7 +4,7 @@ import { vi } from 'vitest'
 import type { SharedLogin } from '../config/shared-logins.ts'
 import type { Deps } from '../deps.ts'
 import type { AccessMember } from '../lib/member-access.ts'
-import type { Contact } from '../lib/salesforce.ts'
+import type { Contact, ContactSummary, EmergencyInfo } from '../lib/salesforce.ts'
 
 export function contact(overrides: Partial<Contact> = {}): Contact {
   return {
@@ -42,6 +42,42 @@ export const SHARED_LOGINS: readonly SharedLogin[] = [
   },
 ]
 
+export function emergencyInfo(overrides: Partial<EmergencyInfo> = {}): EmergencyInfo {
+  return {
+    person: {
+      id: '003000000000BOB',
+      firstName: 'Bobby',
+      lastName: 'Tables',
+      displayName: 'Bob T.',
+      pid: 'P012345',
+      birthdate: '2014-03-01',
+    },
+    emergencyContact: { name: 'Grace Hopper', phone: '919-555-0100', relationship: 'Aunt' },
+    allergies: 'Peanuts (EpiPen in backpack)',
+    medication: null,
+    healthIssues: 'Asthma\nInhaler in the front office',
+    dietaryRestrictions: 'Vegetarian;Nut-free',
+    otherFoodInfo: null,
+    householdAdults: [
+      {
+        id: '003000000000ALI',
+        firstName: 'Alice',
+        lastName: 'Tables',
+        displayName: 'Alice T.',
+        birthdate: '1980-06-15',
+        mobilePhone: '919-555-0101',
+        homePhone: '919-555-0102',
+        preferredPhone: 'Home',
+      },
+    ],
+    ...overrides,
+  }
+}
+
+export const SEARCH_HITS: ContactSummary[] = [
+  { id: '003000000000BOB', firstName: 'Bobby', lastName: 'Tables', displayName: 'Bob T.' },
+]
+
 export function fakeMember(id = 'user-1'): AccessMember & {
   roles: { add: ReturnType<typeof vi.fn>; cache: { has: ReturnType<typeof vi.fn> } }
   setNickname: ReturnType<typeof vi.fn>
@@ -66,12 +102,15 @@ export function fakeDeps(overrides: Partial<Deps> = {}) {
       storageCampaignId: '701STORAGE',
       storageAdditionalInstructions: 'Gate code is on the sign.',
       sharedLogins: SHARED_LOGINS,
+      emergency: { keyholderRoleId: 'role-keyholder', logChannelId: 'chan-emergency-log' } as Deps['config']['emergency'],
     },
     salesforce: {
       getContactByDiscordId: vi.fn(async () => contact() as Contact | null),
       findContactByIds: vi.fn(async () => contact() as Contact | null),
       setDiscordId: vi.fn(async () => undefined),
       getCampaignStatus: vi.fn(async () => 'Approved' as string | null),
+      searchContacts: vi.fn(async (_text: string, _limit: number) => SEARCH_HITS),
+      getEmergencyInfo: vi.fn(async (_id: string) => emergencyInfo() as EmergencyInfo | null),
     },
     igloohome: {
       generateHourly: vi.fn(async () => ({
@@ -81,6 +120,9 @@ export function fakeDeps(overrides: Partial<Deps> = {}) {
       })),
     },
     sheetLog: { storageUnlock: vi.fn(async () => undefined) },
+    postToChannel: vi.fn(async (_channelId: string, _message: unknown) => ({
+      url: 'https://discord.com/channels/guild-1/chan-emergency-log/msg-1',
+    })),
     getGuild: vi.fn(async () => ({ members: { fetch: vi.fn(async (_id: string) => member) } })),
   }
   // Assign after building so the fields keep their Mock types

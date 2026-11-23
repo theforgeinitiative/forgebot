@@ -7,7 +7,7 @@ process.env.TZ ??= 'America/New_York'
 import { Client, Events, GatewayIntentBits, PermissionFlagsBits } from 'discord.js'
 import { parseSharedLogins } from './config/shared-logins.ts'
 import type { Deps } from './deps.ts'
-import { envSchema, parseEnv } from './env.ts'
+import { emergencySettings, envSchema, parseEnv } from './env.ts'
 import { handleGuildMemberAdd } from './events/guild-member-add.ts'
 import { handleInteraction } from './events/interaction-create.ts'
 import { startHealthServer } from './health.ts'
@@ -18,6 +18,7 @@ import { createSheetLog } from './lib/sheet-log.ts'
 
 const env = parseEnv(envSchema)
 const sharedLogins = parseSharedLogins()
+const emergency = emergencySettings(env)
 
 const client = new Client({
   // GuildMembers is privileged; it must be enabled for the application in the
@@ -33,6 +34,7 @@ const deps: Deps = {
     storageCampaignId: env.SF_STORAGE_CAMPAIGN_ID,
     storageAdditionalInstructions: env.STORAGE_ADDITIONAL_INSTRUCTIONS,
     sharedLogins,
+    emergency,
   },
   salesforce: createSalesforceClient(
     connectionFactory({
@@ -50,6 +52,12 @@ const deps: Deps = {
     sheetName: env.STORAGE_LOG_SHEET_NAME,
     serviceAccountJson: env.GOOGLE_SERVICE_ACCOUNT_JSON,
   }),
+  async postToChannel(channelId, message) {
+    const channel = await client.channels.fetch(channelId)
+    if (!channel?.isSendable()) throw new Error(`channel ${channelId} is not one the bot can send to`)
+    const sent = await channel.send(message)
+    return { url: sent.url }
+  },
   getGuild: () => client.guilds.fetch(env.DISCORD_GUILD_ID),
 }
 
@@ -66,6 +74,8 @@ client.once(Events.ClientReady, (c) => {
   }
   const role = guild.roles.cache.get(env.DISCORD_MEMBER_ROLE_ID)
   const welcome = guild.channels.cache.get(env.DISCORD_WELCOME_CHANNEL_ID)
+  const emergencyLog = emergency && guild.channels.cache.get(emergency.logChannelId)
+  const canSend = [PermissionFlagsBits.ViewChannel, PermissionFlagsBits.SendMessages]
   const problems = setupProblems({
     canManageRoles: me.permissions.has(PermissionFlagsBits.ManageRoles),
     canManageNicknames: me.permissions.has(PermissionFlagsBits.ManageNicknames),
@@ -76,11 +86,9 @@ client.once(Events.ClientReady, (c) => {
           belowBotTopRole: me.roles.highest.comparePositionTo(role) > 0,
         }
       : null,
-    welcomeChannelSendable:
-      welcome?.permissionsFor(me)?.has([
-        PermissionFlagsBits.ViewChannel,
-        PermissionFlagsBits.SendMessages,
-      ]) ?? false,
+    welcomeChannelSendable: welcome?.permissionsFor(me)?.has(canSend) ?? false,
+    keyholderRoleExists: emergency ? guild.roles.cache.has(emergency.keyholderRoleId) : null,
+    emergencyLogChannelSendable: emergency ? (emergencyLog?.permissionsFor(me)?.has(canSend) ?? false) : null,
   })
   for (const p of problems) console.error(`[bot] setup problem in "${guild.name}": ${p}`)
 })
